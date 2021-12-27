@@ -1,11 +1,7 @@
 name: build hangover on arm64
 
 on:
-  pull_request:
-    branches:
-      - master
-  schedule:
-    - cron: '0 3 * * TUE'
+  push:
 
 jobs:
   docker:
@@ -28,11 +24,19 @@ jobs:
         name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
       -
+        name: Cache Docker layers
+        uses: actions/cache@v2
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.workflow }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-${{ github.workflow }}-
+      -
         name: Build hangover and export to local Docker instance
         uses: docker/build-push-action@v2
         with:
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=local,src=/tmp/.buildx-cache/hangover-builder
+          cache-to: type=local,dest=/tmp/.buildx-cache-new/hangover-builder,mode=max
           context: hangover
           file: hangover/Dockerfile.cross_arm64
           load: true
@@ -74,6 +78,8 @@ jobs:
         id: docker_build
         uses: docker/build-push-action@v2
         with:
+          cache-from: type=local,src=/tmp/.buildx-cache/hangover
+          cache-to: type=local,dest=/tmp/.buildx-cache-new/hangover,mode=max
           context: .
           file: Dockerfile.build_from_source
           platforms: linux/arm64
@@ -82,5 +88,13 @@ jobs:
             scottyhardy/docker-wine:hangover,
             scottyhardy/docker-wine:hangover-arm64,
             scottyhardy/docker-wine:hangover-${{ steps.version.outputs.hangover }}-wine-${{ steps.version.outputs.wine }}-arm64,
-            scottyhardy/docker-wine:hangover-${{ steps.version.outputs.hangover }}-wine-${{ steps.version.outputs.wine }}-arm64-${{ steps.timestamp.outputs.value }},
+            scottyhardy/docker-wine:hangover-${{ steps.version.outputs.hangover }}-wine-${{ steps.version.outputs.wine }}-arm64-${{ steps.timestamp.outputs.value }}
           target: hangover
+      -
+        # Temp fix
+        # https://github.com/docker/build-push-action/issues/252
+        # https://github.com/moby/buildkit/issues/1896
+        name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
